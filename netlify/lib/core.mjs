@@ -28,7 +28,7 @@ export function checkPw(pw, stored) {
 /* ---------- Token ---------- */
 function secret() {
   const s = env("SESSION_SECRET");
-  if (!s || s.length < 16) throw new Error("SESSION_SECRET tsy voafaritra (Netlify → Environment variables)");
+  if (!s || s.length < 16) throw new Error("SESSION_SECRET tsy voafaritra (Netlify â†’ Environment variables)");
   return s;
 }
 const b64 = (s) => Buffer.from(s).toString("base64url");
@@ -63,9 +63,10 @@ export async function rateLimit(bucket, limit) {
 export async function gemini({ system, messages, json: wantJson = false, schema, maxTokens = 900, temperature = 0.7 }) {
   const key = env("GEMINI_API_KEY");
   if (!key) throw new Error("GEMINI_API_KEY tsy voafaritra");
-  const model = env("GEMINI_MODEL", "gemini-2.5-flash");
-  const generationConfig = { temperature, maxOutputTokens: maxTokens };
+  const model = env("GEMINI_MODEL", "gemini-3.5-flash");
+  const generationConfig = { temperature, maxOutputTokens: maxTokens + 2000 };
   if (/2\.5-flash/.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  else if (/gemini-[3-9]/.test(model)) generationConfig.thinkingConfig = { thinkingLevel: "low" };
   if (wantJson) { generationConfig.responseMimeType = "application/json"; if (schema) generationConfig.responseSchema = schema; }
   const body = {
     systemInstruction: { parts: [{ text: system }] },
@@ -78,7 +79,11 @@ export async function gemini({ system, messages, json: wantJson = false, schema,
     body: JSON.stringify(body)
   });
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error("Gemini " + r.status + ": " + (d.error?.message || "olana"));
+  if (!r.ok) {
+    const msg = "Gemini " + r.status + " (" + model + "): " + (d.error?.message || "olana");
+    console.error(msg);
+    throw new Error(msg);
+  }
   const text = (d.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
   if (!text) throw new Error("Gemini: valiny foana");
   return text;
