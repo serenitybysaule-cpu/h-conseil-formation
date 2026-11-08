@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Administration — H-conseil et Formations</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  body{font-size:16px}
+  .adm{max-width:1100px;margin:0 auto;padding:20px 16px 60px}
+  .adm h1{font-size:28px;margin-bottom:4px}
+  .box{background:#fff;border-radius:14px;padding:16px;margin-top:16px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .row .field{flex:1;min-width:140px;margin:0}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--paper);vertical-align:top}
+  th{font-weight:700;color:var(--ink-2);font-size:13px}
+  .scroll{overflow-x:auto}
+  .pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;font-weight:700;background:var(--green-2)}
+  .pill.warn{background:#FDE8E4;color:#8A2416}
+  .pill.mid{background:var(--gold-2);color:#7A5A00}
+  textarea{width:100%;min-height:260px;font:13px/1.4 ui-monospace,Menlo,monospace;border:2px solid var(--line);border-radius:10px;padding:10px}
+  .ok{background:var(--green-2);padding:10px 12px;border-radius:10px;margin-top:10px}
+  .acts button{margin:0 4px 4px 0}
+</style>
+</head>
+<body>
+<div class="adm">
+  <h1>Administration des élèves</h1>
+  <p class="muted">Créer les comptes (ID + mot de passe + niveau), suivre la progression, corriger le vocabulaire.</p>
+
+  <div class="box" id="lock">
+    <form id="f-key" class="row">
+      <label class="field"><span>Mot de passe administrateur</span><input type="password" id="key" autocomplete="current-password" required></label>
+      <button class="btn btn-main" type="submit">Ouvrir</button>
+    </form>
+    <div id="key-err"></div>
+  </div>
+
+  <div id="main" hidden>
+    <div class="box">
+      <h2 style="font-size:20px;margin-bottom:10px" id="form-title">Ajouter ou modifier un élève</h2>
+      <form id="f-st">
+        <div class="row">
+          <label class="field"><span>ID élève</span><input name="id" required placeholder="ex. A1-001" autocapitalize="characters"></label>
+          <label class="field"><span>Nom (affiché)</span><input name="name" placeholder="ex. Faly"></label>
+          <label class="field"><span>Niveau</span><select name="level"><option>A1</option><option>A2</option><option>B1</option><option>B2</option></select></label>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <label class="field"><span>Mot de passe (vide = inchangé)</span><input name="password" placeholder="min. 4 caractères"></label>
+          <label class="field"><span>Accès jusqu'au (optionnel)</span><input name="expires" type="date"></label>
+          <label class="field" style="flex:0 0 auto"><span>Bloqué</span><input name="disabled" type="checkbox" style="width:auto"></label>
+          <button class="btn btn-main" type="submit">Enregistrer</button>
+          <button class="btn btn-ghost btn-sm" type="button" id="gen">Générer un mot de passe</button>
+        </div>
+      </form>
+      <div id="st-msg"></div>
+    </div>
+
+    <div class="box">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <h2 style="font-size:20px">Élèves <span id="count" class="muted"></span></h2>
+        <div class="row"><input id="filter" placeholder="Filtrer…" style="padding:8px 10px;border:2px solid var(--line);border-radius:10px"><button class="btn btn-soft btn-sm" id="reload">Actualiser</button><button class="btn btn-soft btn-sm" id="csv">Exporter CSV</button></div>
+      </div>
+      <div class="scroll"><table><thead><tr><th>ID</th><th>Nom</th><th>Niv.</th><th>Progression</th><th>Leçon en cours</th><th>Moy. quiz</th><th>Dernière activité</th><th>Accès</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
+    </div>
+
+    <div class="box">
+      <h2 style="font-size:20px;margin-bottom:6px">Vocabulaire d'une leçon</h2>
+      <p class="muted" style="margin-bottom:10px">Le vocabulaire est généré une fois par Gemini à la première ouverture de la leçon, puis réutilisé pour tous. Ici vous pouvez le relire et le corriger (surtout le malgache).</p>
+      <div class="row">
+        <label class="field"><span>Niveau</span><select id="v-lv"><option>A1</option><option>A2</option><option>B1</option><option>B2</option></select></label>
+        <label class="field"><span>Kapitel</span><input id="v-k" type="number" min="1" max="8" value="1"></label>
+        <label class="field"><span>Leçon (n° de séance)</span><input id="v-s" type="number" min="1" max="12" value="1"></label>
+        <button class="btn btn-soft" id="v-load">Charger</button>
+      </div>
+      <textarea id="v-json" style="margin-top:12px" placeholder='[{"de":"Guten Tag!","mg":"Manao ahoana!","fr":"Bonjour !","ex":"Guten Tag, Frau Rova!"}]'></textarea>
+      <div class="row" style="margin-top:10px"><button class="btn btn-main" id="v-save">Enregistrer le vocabulaire</button><button class="btn btn-ghost btn-sm" id="v-del">Effacer (sera régénéré)</button></div>
+      <div id="v-msg"></div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const $=(s)=>document.querySelector(s);
+  let KEY=sessionStorage.getItem('hcf_admin')||'', DATA=[];
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  async function api(path,opt={}){
+    const r=await fetch('/api/'+path,{method:opt.method||(opt.body?'POST':'GET'),headers:{'Content-Type':'application/json','x-admin-key':KEY},body:opt.body?JSON.stringify(opt.body):undefined});
+    const d=await r.json().catch(()=>({error:'Réponse invalide (site non déployé sur Netlify ?)'}));
+    if(!r.ok) throw new Error(d.error||('Erreur '+r.status));
+    return d;
+  }
+  const msg=(el,t,err)=>{$(el).innerHTML=t?'<div class="'+(err?'err':'ok')+'">'+esc(t)+'</div>':''};
+  async function load(){
+    const d=await api('admin/students'); DATA=d.students; render();
+  }
+  function render(){
+    const q=$('#filter').value.trim().toLowerCase();
+    const list=DATA.filter(s=>!q||(s.id+' '+s.name+' '+s.level).toLowerCase().includes(q));
+    $('#count').textContent='('+list.length+')';
+    const today=new Date().toISOString().slice(0,10);
+    $('#rows').innerHTML=list.map(s=>{
+      const pct=Math.round(s.done/s.total*100);
+      const days=s.lastDay?Math.round((new Date(today)-new Date(s.lastDay))/864e5):null;
+      const act=s.lastDay?(days===0?'aujourd\'hui':days+' j')+'':'jamais';
+      const actCls=days==null||days>7?'warn':days>3?'mid':'';
+      const acc=s.disabled?'<span class="pill warn">bloqué</span>':s.expires&&s.expires<today?'<span class="pill warn">expiré</span>':s.expires?'jusqu\'au '+s.expires:'illimité';
+      return '<tr><td><b>'+esc(s.id)+'</b></td><td>'+esc(s.name)+'</td><td>'+s.level+'</td><td>'+s.done+'/'+s.total+' ('+pct+'%)<br><span class="muted">🔥 '+s.streak+' · ⭐ '+s.xp+'</span></td><td>'+esc(s.current||'—')+'</td><td>'+(s.avgScore==null?'—':s.avgScore+' %')+'</td><td><span class="pill '+actCls+'">'+act+'</span></td><td>'+acc+'</td><td class="acts"><button class="btn btn-soft btn-sm" data-edit="'+esc(s.id)+'">Modifier</button><button class="btn btn-ghost btn-sm" data-reset="'+esc(s.id)+'">Remettre à zéro</button><button class="btn btn-ghost btn-sm" data-del="'+esc(s.id)+'">Supprimer</button></td></tr>';
+    }).join('')||'<tr><td colspan="9" class="muted">Aucun élève pour l\'instant : ajoutez-en un ci-dessus.</td></tr>';
+  }
+  $('#f-key').onsubmit=async(e)=>{e.preventDefault();KEY=$('#key').value;try{await load();sessionStorage.setItem('hcf_admin',KEY);$('#lock').hidden=true;$('#main').hidden=false}catch(err){msg('#key-err',err.message,1)}};
+  $('#f-st').onsubmit=async(e)=>{e.preventDefault();const f=new FormData(e.target);
+    const b={id:f.get('id'),name:f.get('name'),level:f.get('level'),password:f.get('password'),expires:f.get('expires')||null,disabled:!!f.get('disabled')};
+    try{const r=await api('admin/students',{body:b});msg('#st-msg','Enregistré : '+r.student.id+(b.password?' — mot de passe : '+b.password+' (à transmettre à l\'élève)':''));e.target.reset();await load()}catch(err){msg('#st-msg',err.message,1)}};
+  $('#gen').onclick=()=>{const c='abcdefghjkmnpqrstuvwxyz23456789';let p='';for(let i=0;i<7;i++)p+=c[Math.floor(Math.random()*c.length)];$('[name=password]').value=p};
+  $('#rows').onclick=async(e)=>{const b=e.target.closest('button');if(!b)return;
+    if(b.dataset.edit){const s=DATA.find(x=>x.id===b.dataset.edit);const f=$('#f-st');f.id.value=s.id;f.name.value=s.name;f.level.value=s.level;f.expires.value=s.expires||'';f.disabled.checked=s.disabled;f.password.value='';f.scrollIntoView({behavior:'smooth'});msg('#st-msg','Modification de '+s.id+'. Laissez le mot de passe vide pour le garder.');}
+    if(b.dataset.reset&&confirm('Remettre à zéro la progression de '+b.dataset.reset+' ?')){await api('admin/reset',{body:{id:b.dataset.reset}});load()}
+    if(b.dataset.del&&confirm('Supprimer définitivement '+b.dataset.del+' et sa progression ?')){await api('admin/students?id='+encodeURIComponent(b.dataset.del),{method:'DELETE'});load()}};
+  $('#filter').oninput=render; $('#reload').onclick=load;
+  $('#csv').onclick=()=>{const h=['id','name','level','done','total','current','avgScore','lastDay','expires'];const rows=[h.join(';')].concat(DATA.map(s=>h.map(k=>'"'+String(s[k]==null?'':s[k]).replace(/"/g,'""')+'"').join(';')));const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+rows.join('\n')],{type:'text/csv'}));a.download='eleves.csv';a.click()};
+  const vid=()=>$('#v-lv').value+'-'+(+$('#v-k').value)+'-'+(+$('#v-s').value);
+  $('#v-load').onclick=async()=>{try{const d=await api('admin/vocab?id='+vid());$('#v-json').value=JSON.stringify(d.words,null,1);msg('#v-msg',d.words.length?d.words.length+' mots chargés.':'Pas encore généré pour cette leçon (il le sera à la première ouverture par un élève), ou écrivez-le vous-même.')}catch(err){msg('#v-msg',err.message,1)}};
+  $('#v-save').onclick=async()=>{let w;try{w=JSON.parse($('#v-json').value||'[]')}catch(e){return msg('#v-msg','JSON invalide : vérifiez les guillemets et les virgules.',1)}try{const r=await api('admin/vocab',{body:{id:vid(),words:w}});msg('#v-msg',r.count+' mots enregistrés.')}catch(err){msg('#v-msg',err.message,1)}};
+  $('#v-del').onclick=async()=>{if(!confirm('Effacer ce vocabulaire ?'))return;await api('admin/vocab',{body:{id:vid(),delete:true}});$('#v-json').value='';msg('#v-msg','Effacé.')};
+  if(KEY){load().then(()=>{$('#lock').hidden=true;$('#main').hidden=false}).catch(()=>{sessionStorage.removeItem('hcf_admin');KEY=''})}
+})();
+</script>
+</body>
+</html>
